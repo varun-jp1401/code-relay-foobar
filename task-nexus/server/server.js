@@ -9,7 +9,6 @@ const bcrypt = require('bcryptjs');
 const app = express();
 app.use(express.json());
 
-app.use(express.json());
 app.use(cors({
   origin: 'http://localhost:3000',
   credentials: true
@@ -33,9 +32,24 @@ fluxNexusHandler.connect((err) => {
 });
 
 /* =========================
+   MIDDLEWARE - AUTH
+========================= */
+const authenticateToken = (req, res, next) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'No token provided' });
+    
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        return res.status(403).json({ error: 'Invalid token' });
+    }
+};
+
+/* =========================
    AUTH – REGISTER
 ========================= */
-
 app.post('/api/auth/register', (req, res) => {
     const { username, email, password } = req.body;
 
@@ -115,50 +129,112 @@ app.post('/api/auth/login', (req, res) => {
         'SELECT * FROM users WHERE email = ?',
         [email],
         (err, results) => {
-            if (err) {
-                return res.status(500).json({ error: 'Database error' });
-            }
-
+            if (err) return res.status(500).json({ error: err.message });
             if (results.length === 0) {
                 return res.status(401).json({ error: 'Invalid email or password' });
             }
 
             const user = results[0];
 
-            const passwordMatch = bcrypt.compareSync(password, user.password_hash);
-            if (!passwordMatch) {
+            if (!user.password_hash) {
+                return res.status(500).json({ error: 'User password missing' });
+            }
+
+            const match = bcrypt.compareSync(password, user.password_hash);
+            if (!match) {
                 return res.status(401).json({ error: 'Invalid email or password' });
             }
 
             const token = jwt.sign(
-                { id: user.id, email: user.email },
+                { id: user.id, username: user.username, email: user.email },
                 JWT_SECRET
             );
 
             res.json({
                 token,
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email
-                }
+                user: { id: user.id, username: user.username, email: user.email }
             });
         }
     );
 });
 
+/* =========================
+   AUTH – GET CURRENT USER
+========================= */
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+    res.json({ user: req.user });
+});
 
+/* =========================
+   ANALYTICS - DASHBOARD
+========================= */
+app.get('/api/analytics/dashboard', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    
+    const queries = [
+        `SELECT COUNT(*) as totalTasks FROM tasks t 
+         JOIN projects p ON t.project_id = p.id 
+         JOIN workspaces w ON p.workspace_id = w.id 
+         JOIN workspace_members wm ON w.id = wm.workspace_id 
+         WHERE wm.user_id = ?`,
+        `SELECT COUNT(*) as completedTasks FROM tasks t 
+         JOIN projects p ON t.project_id = p.id 
+         JOIN workspaces w ON p.workspace_id = w.id 
+         JOIN workspace_members wm ON w.id = wm.workspace_id 
+         WHERE wm.user_id = ? AND t.completed = 1`,
+        `SELECT COUNT(*) as inProgressTasks FROM tasks t 
+         JOIN projects p ON t.project_id = p.id 
+         JOIN workspaces w ON p.workspace_id = w.id 
+         JOIN workspace_members wm ON w.id = wm.workspace_id 
+         WHERE wm.user_id = ? AND t.status = 'in_progress'`,
+        `SELECT COUNT(*) as overdueTasks FROM tasks t 
+         JOIN projects p ON t.project_id = p.id 
+         JOIN workspaces w ON p.workspace_id = w.id 
+         JOIN workspace_members wm ON w.id = wm.workspace_id 
+         WHERE wm.user_id = ? AND t.due_date < NOW() AND t.completed = 0`,
+        `SELECT COUNT(*) as totalProjects FROM projects p 
+         JOIN workspaces w ON p.workspace_id = w.id 
+         JOIN workspace_members wm ON w.id = wm.workspace_id 
+         WHERE wm.user_id = ?`,
+        `SELECT COUNT(*) as totalWorkspaces FROM workspace_members WHERE user_id = ?`,
+        `SELECT t.status, COUNT(*) as count FROM tasks t 
+         JOIN projects p ON t.project_id = p.id 
+         JOIN workspaces w ON p.workspace_id = w.id 
+         JOIN workspace_members wm ON w.id = wm.workspace_id 
+         WHERE wm.user_id = ? GROUP BY t.status`,
+        `SELECT t.priority, COUNT(*) as count FROM tasks t 
+         JOIN projects p ON t.project_id = p.id 
+         JOIN workspaces w ON p.workspace_id = w.id 
+         JOIN workspace_members wm ON w.id = wm.workspace_id 
+         WHERE wm.user_id = ? GROUP BY t.priority`
+    ];
+
+    Promise.all(queries.map(q => new Promise((resolve, reject) => {
+        fluxNexusHandler.query(q, [userId], (err, results) => {
+            if (err) reject(err);
+            else resolve(results);
+        });
+    })))
+    .then(results => {
+        res.json({
+            totalTasks: results[0][0].totalTasks,
+            completedTasks: results[1][0].completedTasks,
+            inProgressTasks: results[2][0].inProgressTasks,
+            overdueTasks: results[3][0].overdueTasks,
+            totalProjects: results[4][0].totalProjects,
+            totalWorkspaces: results[5][0].totalWorkspaces,
+            tasksByStatus: results[6],
+            tasksByPriority: results[7]
+        });
+    })
+    .catch(err => res.status(500).json({ error: err.message }));
+});
 
 /* =========================
    WORKSPACES
 ========================= */
-app.get('/api/workspaces', (req, res) => {
-    let userId = 1;
-
-    try {
-        const token = req.headers.authorization?.split(' ')[1];
-        if (token) userId = jwt.verify(token, JWT_SECRET).id;
-    } catch {}
+app.get('/api/workspaces', authenticateToken, (req, res) => {
+    const userId = req.user.id;
 
     fluxNexusHandler.query(
         `SELECT w.*, wm.role
@@ -167,8 +243,54 @@ app.get('/api/workspaces', (req, res) => {
          WHERE wm.user_id = ?`,
         [userId],
         (err, results) => {
-            if (err) return res.status(500).send('Error');
+            if (err) return res.status(500).json({ error: err.message });
             res.json(results);
+        }
+    );
+});
+
+app.post('/api/workspaces', authenticateToken, (req, res) => {
+    const { name, description } = req.body;
+    const userId = req.user.id;
+    
+    fluxNexusHandler.query(
+        'INSERT INTO workspaces (name, description, owner_id) VALUES (?, ?, ?)',
+        [name, description, userId],
+        (err, results) => {
+            if (err) return res.status(500).json({ error: err.message });
+            
+            const workspaceId = results.insertId;
+            fluxNexusHandler.query(
+                'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)',
+                [workspaceId, userId, 'owner'],
+                (err2) => {
+                    if (err2) return res.status(500).json({ error: err2.message });
+                    res.json({ id: workspaceId, name, description, role: 'owner' });
+                }
+            );
+        }
+    );
+});
+
+app.get('/api/workspaces/:id', authenticateToken, (req, res) => {
+    fluxNexusHandler.query(
+        'SELECT * FROM workspaces WHERE id = ?',
+        [req.params.id],
+        (err, results) => {
+            if (err) return res.status(500).json({ error: err.message });
+            if (results.length === 0) return res.status(404).json({ error: 'Not found' });
+            res.json(results[0]);
+        }
+    );
+});
+
+app.delete('/api/workspaces/:id', authenticateToken, (req, res) => {
+    fluxNexusHandler.query(
+        'DELETE FROM workspaces WHERE id = ?',
+        [req.params.id],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
         }
     );
 });
@@ -176,13 +298,63 @@ app.get('/api/workspaces', (req, res) => {
 /* =========================
    PROJECTS
 ========================= */
-app.get('/api/projects/workspace/:workspaceId', (req, res) => {
+app.get('/api/projects/workspace/:workspaceId', authenticateToken, (req, res) => {
     fluxNexusHandler.query(
-        'SELECT * FROM projects WHERE workspace_id = ?',
+        `SELECT p.*, 
+         COUNT(t.id) as task_count,
+         SUM(CASE WHEN t.completed = 1 THEN 1 ELSE 0 END) as completed_count
+         FROM projects p
+         LEFT JOIN tasks t ON p.id = t.project_id
+         WHERE p.workspace_id = ?
+         GROUP BY p.id`,
         [req.params.workspaceId],
         (err, results) => {
-            if (err) return res.status(500).send('Error');
+            if (err) return res.status(500).json({ error: err.message });
             res.json(results);
+        }
+    );
+});
+
+app.post('/api/projects', authenticateToken, (req, res) => {
+    const { name, description, color, workspaceId } = req.body;
+    
+    fluxNexusHandler.query(
+        'INSERT INTO projects (name, description, color, workspace_id) VALUES (?, ?, ?, ?)',
+        [name, description, color, workspaceId],
+        (err, results) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ 
+                id: results.insertId, 
+                name, 
+                description, 
+                color, 
+                workspace_id: workspaceId, 
+                task_count: 0, 
+                completed_count: 0 
+            });
+        }
+    );
+});
+
+app.get('/api/projects/:id', authenticateToken, (req, res) => {
+    fluxNexusHandler.query(
+        'SELECT * FROM projects WHERE id = ?',
+        [req.params.id],
+        (err, results) => {
+            if (err) return res.status(500).json({ error: err.message });
+            if (results.length === 0) return res.status(404).json({ error: 'Not found' });
+            res.json(results[0]);
+        }
+    );
+});
+
+app.delete('/api/projects/:id', authenticateToken, (req, res) => {
+    fluxNexusHandler.query(
+        'DELETE FROM projects WHERE id = ?',
+        [req.params.id],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
         }
     );
 });
@@ -190,7 +362,7 @@ app.get('/api/projects/workspace/:workspaceId', (req, res) => {
 /* =========================
    TASKS
 ========================= */
-app.get('/api/tasks', (req, res) => {
+app.get('/api/tasks', authenticateToken, (req, res) => {
     let query = 'SELECT * FROM tasks';
     let params = [];
 
@@ -200,9 +372,55 @@ app.get('/api/tasks', (req, res) => {
     }
 
     fluxNexusHandler.query(query, params, (err, results) => {
-        if (err) return res.status(500).send('Error');
+        if (err) return res.status(500).json({ error: err.message });
         res.json(results);
     });
+});
+
+app.post('/api/tasks', authenticateToken, (req, res) => {
+    const { title, description, priority, due_date, project_id } = req.body;
+    
+    fluxNexusHandler.query(
+        'INSERT INTO tasks (title, description, priority, due_date, project_id, status, completed) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [title, description, priority, due_date, project_id, 'todo', 0],
+        (err, results) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ 
+                id: results.insertId, 
+                title, 
+                description, 
+                priority, 
+                due_date, 
+                project_id, 
+                status: 'todo',
+                completed: false 
+            });
+        }
+    );
+});
+
+app.put('/api/tasks/:id', authenticateToken, (req, res) => {
+    const { status, completed } = req.body;
+    
+    fluxNexusHandler.query(
+        'UPDATE tasks SET status = ?, completed = ? WHERE id = ?',
+        [status, completed ? 1 : 0, req.params.id],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        }
+    );
+});
+
+app.delete('/api/tasks/:id', authenticateToken, (req, res) => {
+    fluxNexusHandler.query(
+        'DELETE FROM tasks WHERE id = ?',
+        [req.params.id],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        }
+    );
 });
 
 const PORT = process.env.PORT || 5000;
