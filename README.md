@@ -13,6 +13,7 @@ A full-stack task management application built with **React**, **Vite**, **Node.
 ## Project Structure
 
 ```
+task-nexus/
 ├── server/             # Node.js + Express backend
 │   ├── server.js       # Main server file (all routes)
 │   └── package.json
@@ -25,7 +26,7 @@ A full-stack task management application built with **React**, **Vite**, **Node.
 │   │   │   ├── context/AuthContext.jsx   # Auth state management
 │   │   │   ├── Layout.jsx                # App shell (sidebar + nav)
 │   │   │   ├── UI/                       # Reusable UI components
-│   │   │   └── TaskComponents/           # Legacy task components
+│   │   │   └── TaskComponents/           # Task components
 │   │   └── pages/
 │   │       ├── Login.jsx
 │   │       ├── Register.jsx
@@ -36,8 +37,18 @@ A full-stack task management application built with **React**, **Vite**, **Node.
 │   ├── vite.config.js
 │   └── package.json
 ├── database.sql        # MySQL schema
-└── README.md           # You are here
+└── README.md
 ```
+
+## Getting Started
+
+1. **Fork** this repository by clicking the **Fork** button at the top right of the page.
+2. **Clone** your forked repo:
+   ```bash
+   git clone https://github.com/<your-username>/code-relay-foobar.git
+   cd code-relay-foobar
+   ```
+3. Follow the setup instructions below to get the app running locally.
 
 ## Setup Instructions
 
@@ -51,12 +62,13 @@ A full-stack task management application built with **React**, **Vite**, **Node.
 1. Start your MySQL server.
 2. Import the schema to create the database and tables:
    ```bash
+   cd task-nexus
    mysql -u root -p < database.sql
    ```
 
 ### 2. Environment
 
-Create a `.env` file in the `server/` directory:
+Create a `.env` file in the `task-nexus/server/` directory:
 
 ```env
 DB_HOST=localhost
@@ -71,7 +83,7 @@ Adjust credentials to match your local MySQL setup.
 ### 3. Backend
 
 ```bash
-cd server
+cd task-nexus/server
 npm install
 npm start
 ```
@@ -83,7 +95,7 @@ The server runs on **http://localhost:5000**
 Open a new terminal:
 
 ```bash
-cd client
+cd task-nexus/client
 npm install
 npm run dev
 ```
