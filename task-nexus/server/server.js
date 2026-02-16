@@ -166,6 +166,48 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 });
 
 /* =========================
+   ANALYTICS - WEEKLY DATA
+========================= */
+app.get('/api/analytics/weekly', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    
+    // Get last 7 days of task completion data
+    const query = `
+        SELECT 
+            DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL n.n DAY), '%a') as day,
+            DATE_SUB(CURDATE(), INTERVAL n.n DAY) as date,
+            COALESCE(SUM(CASE 
+                WHEN t.completed = 1 
+                AND DATE(t.updated_at) = DATE_SUB(CURDATE(), INTERVAL n.n DAY) 
+                THEN 1 ELSE 0 
+            END), 0) as completed,
+            COALESCE(SUM(CASE 
+                WHEN DATE(t.created_at) = DATE_SUB(CURDATE(), INTERVAL n.n DAY) 
+                THEN 1 ELSE 0 
+            END), 0) as created
+        FROM (
+            SELECT 0 as n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 
+            UNION SELECT 4 UNION SELECT 5 UNION SELECT 6
+        ) n
+        LEFT JOIN (
+            SELECT t.*, p.workspace_id 
+            FROM tasks t
+            JOIN projects p ON t.project_id = p.id
+            JOIN workspaces w ON p.workspace_id = w.id
+            JOIN workspace_members wm ON w.id = wm.workspace_id
+            WHERE wm.user_id = ?
+        ) t ON 1=1
+        GROUP BY n.n, date, day
+        ORDER BY date ASC
+    `;
+
+    fluxNexusHandler.query(query, [userId], (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(results);
+    });
+});
+
+/* =========================
    ANALYTICS - DASHBOARD
 ========================= */
 app.get('/api/analytics/dashboard', authenticateToken, (req, res) => {

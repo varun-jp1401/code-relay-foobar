@@ -1,10 +1,12 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../modules/context/AuthContext';
-import { LayoutDashboard, Building2, LogOut, User } from 'lucide-react';
+import { useTheme } from '../modules/context/ThemeContext';
+import { LayoutDashboard, Building2, LogOut, User, Moon, Sun } from 'lucide-react';
 
 export default function Layout() {
     const { user, logout } = useAuth();
+    const { isDark, toggleTheme } = useTheme();
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -20,7 +22,7 @@ export default function Layout() {
                 </div>
 
                 <nav className="sidebar-nav">
-                    <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                    <NavLink to="/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                         <LayoutDashboard size={20} /><span>Dashboard</span>
                     </NavLink>
                     <NavLink to="/workspaces" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
@@ -43,6 +45,16 @@ export default function Layout() {
             </aside>
 
             <main className="main-content">
+                <div className="app-header">
+                    <div></div>
+                    <button 
+                        onClick={toggleTheme}
+                        className="theme-toggle-btn"
+                        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                    >
+                        {isDark ? <Sun size={20} /> : <Moon size={20} />}
+                    </button>
+                </div>
                 <Outlet />
             </main>
         </div>
