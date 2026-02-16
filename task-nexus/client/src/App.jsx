@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { Plus, Layout as LayoutIcon } from 'lucide-react';
-import TaskList from './modules/TaskComponents/TaskLits';
+import TaskList from './modules/TaskComponents/TaskList';
 import Card from './modules/UI/Card';
 import Input from './modules/UI/Input';
 import Button from './modules/UI/Button';
@@ -16,17 +16,17 @@ import Projects from './pages/Projects';
 import Tasks from './pages/Tasks';
 import './App.css';
 
-const API_BASE = import.meta.env.API_URL || 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function ProtectedRoute({ children }) {
     const { user, loading } = useAuth();
     if (loading) return <div className="page-loading"><div className="spinner"></div></div>;
-    if (!user) return null;
+    if (!user) return <Navigate to="/login" replace />;
     return children;
 }
 
 function LegacyTaskApp() {
-    const [quantumTasks, setQuantumTasks] = useState();
+    const [quantumTasks, setQuantumTasks] = useState([]);
     const [newTitle, setNewTitle] = useState('');
 
     useEffect(() => {
@@ -36,7 +36,7 @@ function LegacyTaskApp() {
     const fetchTasks = async () => {
         try {
             const response = await axios.get(`${API_BASE}/api/tasks`);
-            setQuantumTasks(response);
+            setQuantumTasks(response.data);
         } catch (error) {
             console.error("Nexus communication failure", error);
         }
@@ -46,30 +46,29 @@ function LegacyTaskApp() {
         e.preventDefault();
         if (!newTitle) return;
         try {
-            const response = await axios.post('http://localhost:5000/api/tasks', { title: newTitle });
-            setQuantumTasks([...quantumTasks, response.data]);
+            const response = await axios.post(`${API_BASE}/api/tasks`, { title: newTitle });
+            setQuantumTasks(prev => [...prev, response.data]);
             setNewTitle('');
         } catch (error) {
             console.error("Injection attempt detected during task birth", error);
         }
     };
-
-    const handleToggle = useCallback(async (id) => {
+    const handleToggle = async (id) => {
         const task = quantumTasks.find(t => t.id === id);
         if (!task) return;
 
         try {
             await axios.put(`${API_BASE}/api/tasks/${id}`, { completed: !task.completed });
-            setQuantumTasks(quantumTasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+            setQuantumTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
         } catch (error) {
             console.error("State transition error", error);
         }
-    }, []);
+    };
 
     const handleDelete = async (id) => {
         try {
             await axios.delete(`${API_BASE}/api/tasks/${id}`);
-            setQuantumTasks(quantumTasks.filter(t => t.id !== id));
+            setQuantumTasks(prev => prev.filter(t => t.id !== id));
         } catch (error) {
             console.error("Purge failure", error);
         }

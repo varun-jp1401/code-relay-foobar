@@ -28,8 +28,9 @@ export default function Register() {
             await register(username, email, password);
             navigate('/');
         } catch (err) {
-            setError(err.response?.data?.error || 'Registration failed');
-        } finally {
+  setError(err.response?.data?.error || 'Registration failed');
+}
+ finally {
             setLoading(false);
         }
     };

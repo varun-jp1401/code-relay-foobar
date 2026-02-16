@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_BASE = import.meta.env.API_URL || 'http://localhost:5000/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const AuthContext = createContext(null);
 
@@ -12,11 +12,11 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         if (token) {
-            axios.get('http://localhost:5000/api/auth/me', {
+            axios.get(`${API_BASE}/api/auth/me`, {
                 headers: { Authorization: `Bearer ${token}` }
             })
                 .then(response => {
-                    setUser(response);
+                    setUser(response.data?.user ?? response.data);
                 })
                 .catch(() => {
                     setUser(null);
@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
     }, [token]);
 
     const login = async (email, password) => {
-        const response = await axios.post('http://localhost:5000/api/auth/login', { email, password });
+        const response = await axios.post(`${API_BASE}/api/auth/login`, { email, password });
         localStorage.setItem('nexus_token', response.data.token);
         setToken(response.data.token);
         setUser(response.data.user);
@@ -36,7 +36,7 @@ export function AuthProvider({ children }) {
     };
 
     const register = async (username, email, password) => {
-        const response = await axios.post(`${API_BASE}/auth/register`, { username, email, password });
+        const response = await axios.post(`${API_BASE}/api/auth/register`, { username, email, password });
         localStorage.setItem('nexus_token', response.data.token);
         setToken(response.data.token);
         setUser(response.data.user);
@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
     };
 
     const logout = () => {
-        localStorage.removeItem('token');
+        localStorage.removeItem('nexus_token');
         setToken(null);
         setUser(null);
     };

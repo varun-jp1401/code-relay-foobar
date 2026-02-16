@@ -12,18 +12,20 @@ function Login() {
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
-        setError('');
-        setLoading(true);
+    e.preventDefault();
+    setError('');
+    setLoading(true);
 
-        try {
-            await login(email, password);
-            navigate('/');
-        } catch (err) {
-            setError(err.data?.error || 'Login failed');
-        } finally {
-            setLoading(false);
-        }
-    };
+    try {
+        await login(email, password);
+        navigate('/');
+    } catch (err) {
+        setError(err.response?.data?.error || 'Login failed');
+    } finally {
+        setLoading(false);
+    }
+};
+
 
     return (
         <div className="auth-page">
@@ -89,4 +91,4 @@ function Login() {
     );
 }
 
-export { Login };
+export default Login;
